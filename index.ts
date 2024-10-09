@@ -6,7 +6,14 @@ const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 
 let banQueue: string[] = [];
 
-const BANNED_GUILDS = ["867122533962350623"];
+const BANNED_GUILDS = [
+	"867122533962350623" // testing
+	// "504747822579712017", // nowipe
+	// "1114882465220276336", // solos
+	// "1081006965804769322", // duos
+	// "1090065226017296414", // trios
+	// "1006268867267530842" // quads
+];
 const EXEMPT_ROLES: string[] = [
 	"1290621870248562718",
 	"1281955931332149310",
@@ -65,7 +72,10 @@ async function bulkBan(members: string[]) {
 			}
 
 			if (banningMembers.length === 0) {
-				console.log("Everybody that can be banned is already banned.");
+				console.log(
+					"Everybody that can be banned is already banned on " +
+						guild.name
+				);
 				return;
 			}
 			const res = await guild.bans.bulkCreate(banningMembers, {
