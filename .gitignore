@@ -1,4 +1,5 @@
 .env
 node_modules
 package-lock.json
-test.js
+dist
+index.js
