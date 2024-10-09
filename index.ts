@@ -1,17 +1,30 @@
 import { config } from "dotenv";
 config();
 
+import { Client, GatewayIntentBits } from "discord.js";
+const client = new Client({ intents: [GatewayIntentBits.Guilds] });
+
+let banQueue: string[] = [];
+
 const BANNED_GUILDS = ["867122533962350623"];
+const EXEMPT_ROLES: string[] = [
+	"1290621870248562718",
+	"1281955931332149310",
+	"1284743666014879827",
+	"1292636563418775562",
+	"1291546002322489467"
+];
 
 const HEADSHOT_DISCORD = "910276845310717982";
 const MEMBER_ROLE = "910276845310717983";
 
 const ROLE_MEMBERS_ENDPOINT =
-	"https://discord.com/api/v9/guilds/{guildId}/roles/{roleId}/member-ids";
-const BULK_BAN_ENDPOINT =
-	"https://discord.com/api/v9/guilds/{guildId}/bulk-ban";
+	"https://discord.com/api/v10/guilds/{guildId}/roles/{roleId}/member-ids";
 
-async function getRoleMembers(guildId: string, roleId: string) {
+async function getRoleMembers(
+	guildId: string,
+	roleId: string
+): Promise<string[]> {
 	const response = await fetch(
 		ROLE_MEMBERS_ENDPOINT.replace("{guildId}", guildId).replace(
 			"{roleId}",
@@ -23,29 +36,85 @@ async function getRoleMembers(guildId: string, roleId: string) {
 	return response.json();
 }
 
-async function bulkBanMembers(guildId: string, members: string[]) {
-	const data = { delete_message_seconds: 0, user_ids: members };
+async function bulkBan(members: string[]) {
+	console.log("Attempting to bulk ban " + members.length + " members");
+	if (client.readyAt !== null) {
+		for (const g of BANNED_GUILDS) {
+			const guild = await client.guilds.fetch(g);
+			if (!guild) return;
 
-	const response = await fetch(
-		BULK_BAN_ENDPOINT.replace("{guildId}", guildId),
-		{
-			headers: { Authorization: process.env.PERSONAL_TOKEN! },
-			method: "POST",
-			// @ts-ignore
-			body: data
+			let banningMembers: string[] = [];
+			bigloop: for (const m of members) {
+				const member = await guild.members
+					.fetch(m)
+					.catch((ignored) => {});
+				if (!member) continue;
+
+				for (const r of member.roles.cache) {
+					if (EXEMPT_ROLES.includes(r[0])) continue bigloop;
+				}
+
+				if (!member.bannable) continue bigloop;
+				await guild.bans.fetch();
+				const existingBan = guild.bans.cache.find(
+					(b) => b.user.id === member.id
+				);
+				if (existingBan) continue bigloop;
+
+				banningMembers.push(m);
+			}
+
+			if (banningMembers.length === 0) {
+				console.log("Everybody that can be banned is already banned.");
+				return;
+			}
+			const res = await guild.bans.bulkCreate(banningMembers, {
+				deleteMessageSeconds: 0,
+				reason: "Active headshot key"
+			});
+			if (!res) continue;
+
+			console.log(
+				"Bulk banned " +
+					res.bannedUsers.length +
+					" members from " +
+					guild.name
+			);
+			console.log(
+				"Failed to ban " +
+					res.failedUsers.length +
+					" members from " +
+					guild.name
+			);
 		}
-	);
-
-	return response.json();
+	} else {
+		console.log("Queueing " + members.length + " bans");
+		banQueue.push(...members);
+	}
 }
 
-const members = getRoleMembers(HEADSHOT_DISCORD, MEMBER_ROLE).then((res) => {
-	for (const g of BANNED_GUILDS) {
-		bulkBanMembers(g, res).then((banned) => {
-			for (const b in banned.banned_users) {
-			}
-		});
+async function searchMembers() {
+	console.log("Attempting to search for members");
+	const members = await getRoleMembers(HEADSHOT_DISCORD, MEMBER_ROLE);
+	if (!members) return;
+
+	await bulkBan(members);
+}
+
+searchMembers();
+
+setInterval(async () => {
+	await searchMembers();
+}, 600000 /* 10 minutes */);
+
+client.once("ready", async () => {
+	console.log("Bot is online!");
+	if (banQueue.length > 0) {
+		console.log("Queue has items");
+		await bulkBan(banQueue);
 	}
 });
 
-setTimeout(() => {}, 5000);
+client.login(process.env.BOT_TOKEN!);
+
+setTimeout(() => {}, 7000);
